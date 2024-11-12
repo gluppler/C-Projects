@@ -163,43 +163,90 @@ void calculate_bed_ratio(const HospitalData *data, int size, const char *date) {
 }
 
 void average_category(const char *category, const HospitalData *data, int size, const char *date) {
-    int total = 0, count = 0;
+    // Array to store total admissions and counts for each state
+    int total_suspected[16] = {0}, total_covid[16] = {0}, total_total[16] = {0};
+    int count_suspected[16] = {0}, count_covid[16] = {0}, count_total[16] = {0};
+    const char *states[16] = {
+        "Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan",
+        "Pahang", "Perak", "Perlis", "Pulau Pinang", "Sabah",
+        "Sarawak", "Selangor", "Terengganu", "W.P. Kuala Lumpur", "W.P. Labuan", "W.P. Putrajaya"
+    };
 
+    // Iterate over the dataset and sum up the values for each state
     for (int i = 0; i < size; i++) {
-        if (date && !compare_strings_case_insensitive(data[i].date, date)) continue;
+        if (date && !compare_strings_case_insensitive(data[i].date, date)) {
+            continue;  // Skip entries not matching the specified date
+        }
 
-        int category_value = 0;
+        // Find the index for the state (assuming states are known and their indices are 0 to 15)
+        int state_index = -1;
+        for (int j = 0; j < 16; j++) {
+            if (compare_strings_case_insensitive(data[i].state, states[j]) == 1) {
+                state_index = j;
+                break;
+            }
+        }
+
+        if (state_index == -1) {
+            continue;  // Skip if the state is not recognized
+        }
+
+        // Depending on the category, sum the appropriate admissions data for each state
         if (strcmp(category, "suspected") == 0) {
-            category_value = data[i].admitted_pui;  // Use admitted_pui but keep the "suspected" category
+            total_suspected[state_index] += data[i].admitted_pui;
+            count_suspected[state_index]++;
         } else if (strcmp(category, "covid") == 0) {
-            category_value = data[i].admitted_covid;
+            total_covid[state_index] += data[i].admitted_covid;
+            count_covid[state_index]++;
         } else if (strcmp(category, "total") == 0) {
-            category_value = data[i].admitted_total;
+            total_total[state_index] += data[i].admitted_total;
+            count_total[state_index]++;
         } else {
             fprintf(stderr, "Invalid category. Choose from suspected, covid, or total.\n");
             exit(EXIT_FAILURE);
         }
-
-        total += category_value;
-        count++;
     }
 
-    if (count > 0) {
-        double average = (double)total / count;
-        printf("Average %s admissions: %.2f\n", category, average);
-    } else {
-        printf("No data found for the specified date or category.\n");
+    // Only print results for the specified category
+    if (strcmp(category, "suspected") == 0) {
+        for (int i = 0; i < 16; i++) {
+            if (count_suspected[i] > 0) {
+                double avg_suspected = (double)total_suspected[i] / count_suspected[i];
+                printf("Average suspected admissions for %s: %.2f\n", states[i], avg_suspected);
+            } else {
+                printf("No data found for suspected admissions in %s.\n", states[i]);
+            }
+        }
+    } else if (strcmp(category, "covid") == 0) {
+        for (int i = 0; i < 16; i++) {
+            if (count_covid[i] > 0) {
+                double avg_covid = (double)total_covid[i] / count_covid[i];
+                printf("Average COVID-19 admissions for %s: %.2f\n", states[i], avg_covid);
+            } else {
+                printf("No data found for COVID-19 admissions in %s.\n", states[i]);
+            }
+        }
+    } else if (strcmp(category, "total") == 0) {
+        for (int i = 0; i < 16; i++) {
+            if (count_total[i] > 0) {
+                double avg_total = (double)total_total[i] / count_total[i];
+                printf("Average total admissions for %s: %.2f\n", states[i], avg_total);
+            } else {
+                printf("No data found for total admissions in %s.\n", states[i]);
+            }
+        }
     }
 }
 
 int compare_strings_case_insensitive(const char *a, const char *b) {
     while (*a && *b) {
-        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
-            return 0;
+        if (tolower(*a) != tolower(*b)) {
+            return 0;  // Strings do not match
         }
         a++;
         b++;
     }
-    return *a == *b;
+    return (*a == '\0' && *b == '\0');  // Both strings must end
 }
+
 
