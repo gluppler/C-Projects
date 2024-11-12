@@ -10,19 +10,21 @@ typedef struct {
     char *date;
     char *state;
     int total_beds;
+    int beds;
     int beds_covid;
+    int beds_noncritical;
     int admitted_suspected;
-    int admitted_probable;
     int admitted_covid_positive;
-    int admitted_non_covid;
+    int admitted_total;
 } HospitalData;
 
 // Function prototypes
 void load_data(const char *filename, HospitalData **data, int *size);
 void find_highest_bed_state(const HospitalData *data, int size, const char *date);
 void calculate_bed_ratio(const HospitalData *data, int size, const char *date);
-void average_category(const char *category, const HospitalData *data, int size, const char *date);
+void average_category(const HospitalData *data, int size, const char *category, const char *date);
 int compare_strings_case_insensitive(const char *a, const char *b);
+
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
@@ -30,7 +32,7 @@ int main(int argc, char *argv[]) {
         printf("Options:\n");
         printf("  --highest-bed-state       Find the state with the highest total hospital beds\n");
         printf("  --bed-ratio               Calculate the ratio of COVID-19 dedicated beds to total hospital beds\n");
-        printf("  --average-category <x>    Calculate average admissions for a specified category (suspected/probable/covid_positive/non_covid)\n");
+        printf("  --average-category <x>    Calculate average admissions for a specified category (suspected/covid/total)\n");
         printf("Note: [category] argument is required for --average-category.\n");
         return 1;
     }
@@ -49,10 +51,10 @@ int main(int argc, char *argv[]) {
         calculate_bed_ratio(data, size, date);
     } else if (strcmp(argv[2], "--average-category") == 0) {
         if (argc < 4) {
-            fprintf(stderr, "Error: Please specify a category.\n");
+            fprintf(stderr, "Error: Please specify a category (suspected, covid, total).\n");
             return 1;
         }
-        average_category(argv[3], data, size, date);
+        average_category(data, size, argv[3], date);
     } else {
         fprintf(stderr, "Error: Invalid option.\n");
         return 1;
@@ -89,12 +91,12 @@ void load_data(const char *filename, HospitalData **data, int *size) {
         if (sscanf(line, "%10[^,],%99[^,],%d,%d,%d,%d,%d,%d",
                    entry->date,
                    entry->state,
-                   &entry->total_beds,
+                   &entry->beds,
                    &entry->beds_covid,
+                   &entry->beds_noncritical,
                    &entry->admitted_suspected,
-                   &entry->admitted_probable,
                    &entry->admitted_covid_positive,
-                   &entry->admitted_non_covid) != 8) {
+                   &entry->admitted_total) != 8) {
             fprintf(stderr, "Error parsing line: %s\n", line);
             continue; // Skip the malformed line
         }
@@ -105,48 +107,67 @@ void load_data(const char *filename, HospitalData **data, int *size) {
     fclose(file);
 }
 
+
 void find_highest_bed_state(const HospitalData *data, int size, const char *date) {
-    int max_beds = 0;
-    const char *max_state = NULL;
+    int max_beds = 0, max_covid_beds = 0, max_noncritical_beds = 0;
+    const char *max_beds_state = NULL, *max_covid_beds_state = NULL, *max_noncritical_beds_state = NULL;
 
     for (int i = 0; i < size; i++) {
         if (date && !compare_strings_case_insensitive(data[i].date, date)) {
             continue;  // Skip entries not matching the specified date
         }
-        if (data[i].total_beds > max_beds) {
-            max_beds = data[i].total_beds;
-            max_state = data[i].state;
+
+        if (data[i].beds > max_beds) {
+            max_beds = data[i].beds;
+            max_beds_state = data[i].state;
+        }
+        if (data[i].beds_covid > max_covid_beds) {
+            max_covid_beds = data[i].beds_covid;
+            max_covid_beds_state = data[i].state;
+        }
+        if (data[i].beds_noncritical > max_noncritical_beds) {
+            max_noncritical_beds = data[i].beds_noncritical;
+            max_noncritical_beds_state = data[i].state;
         }
     }
 
-    if (max_state) {
-        printf("State with the highest total hospital beds: %s (%d beds)\n", max_state, max_beds);
-    } else {
+    if (max_beds_state) {
+        printf("State with the highest total beds: %s (%d beds)\n", max_beds_state, max_beds);
+    }
+    if (max_covid_beds_state) {
+        printf("State with the highest COVID-19 beds: %s (%d beds)\n", max_covid_beds_state, max_covid_beds);
+    }
+    if (max_noncritical_beds_state) {
+        printf("State with the highest non-critical beds: %s (%d beds)\n", max_noncritical_beds_state, max_noncritical_beds);
+    }
+    if (!max_beds_state && !max_covid_beds_state && !max_noncritical_beds_state) {
         printf("No data found for the specified date.\n");
     }
 }
 
+
 void calculate_bed_ratio(const HospitalData *data, int size, const char *date) {
-    int total_covid_beds = 0;
     int total_beds = 0;
+    int total_covid_beds = 0;
 
     for (int i = 0; i < size; i++) {
         if (date && !compare_strings_case_insensitive(data[i].date, date)) {
             continue;
         }
+        total_beds += data[i].beds;
         total_covid_beds += data[i].beds_covid;
-        total_beds += data[i].total_beds;
     }
 
     if (total_beds > 0) {
-        double ratio = (double)total_covid_beds / total_beds;
-        printf("Ratio of COVID-19 dedicated beds to total hospital beds: %.2f\n", ratio);
+        double ratio = (double)total_beds / total_covid_beds;
+        printf("Ratio of total hospital beds to COVID-19 dedicated beds: %.2f\n", ratio);
     } else {
         printf("No data found for the specified date.\n");
     }
 }
 
-void average_category(const char *category, const HospitalData *data, int size, const char *date) {
+
+void average_category(const HospitalData *data, int size, const char *category, const char *date) {
     int total = 0;
     int count = 0;
 
@@ -155,27 +176,20 @@ void average_category(const char *category, const HospitalData *data, int size, 
             continue;
         }
 
-        int category_value = 0;
+        // Check the category and calculate the appropriate admissions
         if (strcmp(category, "suspected") == 0) {
-            category_value = data[i].admitted_suspected;
-        } else if (strcmp(category, "probable") == 0) {
-            category_value = data[i].admitted_probable;
-        } else if (strcmp(category, "covid_positive") == 0) {
-            category_value = data[i].admitted_covid_positive;
-        } else if (strcmp(category, "non_covid") == 0) {
-            category_value = data[i].admitted_non_covid;
-        } else {
-            fprintf(stderr, "Invalid category. Choose from suspected, probable, covid_positive, or non_covid.\n");
-            exit(EXIT_FAILURE);
+            total += data[i].admitted_suspected;
+        } else if (strcmp(category, "covid") == 0) {
+            total += data[i].admitted_covid_positive;
+        } else if (strcmp(category, "total") == 0) {
+            total += data[i].admitted_total;
         }
-
-        total += category_value;
         count++;
     }
 
     if (count > 0) {
-        double average = (double)total / count;
-        printf("Average %s admissions: %.2f\n", category, average);
+        double avg = (double)total / count;
+        printf("Average %s admissions: %.2f\n", category, avg);
     } else {
         printf("No data found for the specified date or category.\n");
     }
